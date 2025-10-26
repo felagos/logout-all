@@ -25,10 +25,11 @@ help:
 	@echo "  restart     - Restart production environment and rebuild images"
 	@echo ""
 	@echo "URLs:"
-	@echo "  Server:     http://localhost:3001"
-	@echo "  Health:     http://localhost:3001/health"
-	@echo "  MongoDB:    localhost:27017"
-	@echo "  Redis:      localhost:6379"
+	@echo "  Load Balancer: http://localhost"
+	@echo "  Health:        http://localhost/health"
+	@echo "  Server 1:      http://localhost:3001 (dev mode only)"
+	@echo "  MongoDB:       localhost:27017"
+	@echo "  Redis:         localhost:6379"
 	@echo ""
 
 # Installation

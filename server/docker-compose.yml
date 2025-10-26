@@ -1,20 +1,106 @@
 services:
-  logout-all-server:
+  # Load Balancer (Nginx)
+  nginx:
+    image: nginx:alpine
+    container_name: logout-all-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - logout-all-server-1
+      - logout-all-server-2
+      - logout-all-server-3
+    networks:
+      - logout-all-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Backend Server Instance 1
+  logout-all-server-1:
     build: 
       context: .
       dockerfile: Dockerfile
-    container_name: logout-all-server
+    container_name: logout-all-server-1
     env_file:
       - .env
     environment:
-      - NODE_ENV=dev
+      - NODE_ENV=production
       - PORT=3001
       - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
       - MONGODB_URI=mongodb://mongo:27017/logout-all
       - REDIS_URL=redis://redis:6379
-      - SERVER_ID=server-dev-1
-    ports:
-      - "3001:3001"
+      - SERVER_ID=server-prod-1
+    expose:
+      - "3001"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - logout-all-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Backend Server Instance 2
+  logout-all-server-2:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: logout-all-server-2
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
+      - MONGODB_URI=mongodb://mongo:27017/logout-all
+      - REDIS_URL=redis://redis:6379
+      - SERVER_ID=server-prod-2
+    expose:
+      - "3001"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - logout-all-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Backend Server Instance 3
+  logout-all-server-3:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: logout-all-server-3
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
+      - MONGODB_URI=mongodb://mongo:27017/logout-all
+      - REDIS_URL=redis://redis:6379
+      - SERVER_ID=server-prod-3
+    expose:
+      - "3001"
     depends_on:
       mongo:
         condition: service_healthy

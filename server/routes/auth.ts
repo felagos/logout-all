@@ -139,10 +139,10 @@ const authenticateToken = (req: Request, res: Response, next: any) => {
 
 router.post("/logout", authenticateToken, async (req: Request, res: Response) => {
   try {
-    const { sessionId } = (req as any).user;
+    const { userId, sessionId } = (req as any).user;
     
     await Session.findOneAndUpdate(
-      { sessionId },
+      { userId, sessionId },
       { isActive: false }
     );
 
@@ -201,12 +201,9 @@ router.get("/events", (req: Request, res: Response) => {
     return res.status(401).json({ error: "Access token required" });
   }
 
-  jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
-    if (err) {
-      return res.status(403).json({ error: "Invalid or expired token" });
-    }
-
-    const { userId, sessionId } = decoded;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { userId, sessionId } = decoded as { userId: string; sessionId: string };
     console.log(`🔌 SSE: New connection request from user ${userId}, session ${sessionId}`);
     
     res.writeHead(200, {
@@ -220,7 +217,9 @@ router.get("/events", (req: Request, res: Response) => {
     res.write(`data: ${JSON.stringify({ type: 'connected', message: 'SSE connection established' })}\n\n`);
     
     redisSSEManager.addClient(userId, sessionId, res);
-  });
+  } catch (error) {
+    return res.status(403).json({ error: "Invalid or expired token" });
+  }
 });
 
 export default router;

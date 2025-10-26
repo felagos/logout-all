@@ -1,0 +1,18 @@
+# Standalone load balancer configuration for testing
+# Usage: docker-compose -f docker-compose.loadbalancer.yml up
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: logout-all-nginx-test
+    ports:
+      - "8080:80"
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - logout-all-network
+    restart: unless-stopped
+
+networks:
+  logout-all-network:
+    external: true

@@ -1,12 +1,6 @@
 import { Response } from "express";
 import Redis from "ioredis";
 
-interface SSEClient {
-  userId: string;
-  sessionId: string;
-  response: Response;
-}
-
 interface RedisEvent {
   userId: string;
   excludeSessionId: string;
@@ -20,32 +14,23 @@ class RedisSSEManager {
   private redis: Redis;
   private publisher: Redis;
   private subscriber: Redis;
-  private localClients: Map<string, SSEClient[]> = new Map();
+  private localClients: Map<string, Response> = new Map(); // Only store Response objects locally
   private serverId: string;
 
   constructor() {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-    this.serverId = process.env.SERVER_ID || `server-${Math.random().toString(36).substr(2, 9)}`;
+    this.serverId = process.env.SERVER_ID || `server-${Math.random().toString(36).substring(2, 11)}`;
     
     console.log(`🔧 Initializing Redis SSE Manager - Server ID: ${this.serverId}`);
     
-    this.redis = new Redis(redisUrl, {
-      retryDelayOnFailover: 100,
+    const redisOptions = {
       enableReadyCheck: false,
       maxRetriesPerRequest: null,
-    });
+    };
     
-    this.publisher = new Redis(redisUrl, {
-      retryDelayOnFailover: 100,
-      enableReadyCheck: false,
-      maxRetriesPerRequest: null,
-    });
-    
-    this.subscriber = new Redis(redisUrl, {
-      retryDelayOnFailover: 100,
-      enableReadyCheck: false,
-      maxRetriesPerRequest: null,
-    });
+    this.redis = new Redis(redisUrl, redisOptions);
+    this.publisher = new Redis(redisUrl, redisOptions);
+    this.subscriber = new Redis(redisUrl, redisOptions);
     
     this.setupRedisSubscription();
     this.setupRedisEventHandlers();
@@ -75,24 +60,27 @@ class RedisSSEManager {
   }
 
   async addClient(userId: string, sessionId: string, res: Response) {
-    if (!this.localClients.has(userId)) {
-      this.localClients.set(userId, []);
-    }
+    const userSessionsKey = `user:${userId}:sessions`;
     
-    const client: SSEClient = { userId, sessionId, response: res };
-    this.localClients.get(userId)!.push(client);
-    
-    console.log(`📱 SSE: Client connected - User: ${userId}, Session: ${sessionId}, Server: ${this.serverId}, Total local connections: ${this.localClients.get(userId)!.length}`);
-
-    // Register this server instance for this user in Redis
     try {
-      await this.redis.sadd(`user:${userId}:servers`, this.serverId);
-      await this.redis.expire(`user:${userId}:servers`, 300); // 5 min TTL
-      await this.redis.hset(`server:${this.serverId}:users`, userId, Date.now());
-      await this.redis.expire(`server:${this.serverId}:users`, 300);
+      // Store session-to-server mapping in Redis
+      await this.redis.hset(`session:${sessionId}`, 
+        'userId', userId,
+        'serverId', this.serverId
+      );
+      await this.redis.expire(`session:${sessionId}`, 86400); // 24h TTL
+      
+      // Add to user's sessions set
+      await this.redis.sadd(userSessionsKey, sessionId);
+      await this.redis.expire(userSessionsKey, 86400);
     } catch (error) {
       console.error('❌ Redis registration error:', error);
     }
+    
+    // Store Response object locally for sending messages
+    this.localClients.set(sessionId, res);
+    
+    console.log(`📱 SSE: Client connected - User: ${userId}, Session: ${sessionId}, Server: ${this.serverId}`);
 
     res.on('close', () => {
       this.removeClient(userId, sessionId);
@@ -101,17 +89,15 @@ class RedisSSEManager {
   }
 
   removeClient(userId: string, sessionId: string) {
-    const userClients = this.localClients.get(userId);
-    if (userClients) {
-      const filteredClients = userClients.filter(client => client.sessionId !== sessionId);
-      if (filteredClients.length === 0) {
-        this.localClients.delete(userId);
-        // Remove user from this server's registry
-        this.redis.hdel(`server:${this.serverId}:users`, userId).catch(console.error);
-        this.redis.srem(`user:${userId}:servers`, this.serverId).catch(console.error);
-      } else {
-        this.localClients.set(userId, filteredClients);
-      }
+    // Remove from local Response cache
+    this.localClients.delete(sessionId);
+    
+    // Remove from Redis asynchronously
+    try {
+      this.redis.srem(`user:${userId}:sessions`, sessionId).catch(console.error);
+      this.redis.del(`session:${sessionId}`).catch(console.error);
+    } catch (error) {
+      console.error('❌ Error removing client from Redis:', error);
     }
   }
 
@@ -142,7 +128,7 @@ class RedisSSEManager {
     }
   }
 
-  private handleRedisMessage(channel: string, message: string) {
+  private async handleRedisMessage(channel: string, message: string) {
     try {
       const event: RedisEvent = JSON.parse(message);
       
@@ -155,93 +141,69 @@ class RedisSSEManager {
       console.log(`📡 Redis: Received ${event.event} event from server ${event.fromServer} for user ${event.userId}`);
       
       // Send to local clients
-      this.sendToLocalClients(event.userId, event.excludeSessionId, event.event, event.data);
+      await this.sendToLocalClients(event.userId, event.excludeSessionId, event.event, event.data);
     } catch (error) {
       console.error('❌ Error parsing Redis message:', error, 'Raw message:', message);
     }
   }
 
-  private sendToLocalClients(userId: string, excludeSessionId: string, event: string, data: any) {
-    const userClients = this.localClients.get(userId);
-    if (userClients) {
-      const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-      let sentCount = 0;
-      
-      userClients.forEach(client => {
-        if (client.sessionId !== excludeSessionId) {
-          try {
-            client.response.write(message);
+  private async sendToLocalClients(userId: string, excludeSessionId: string, event: string, data: any) {
+    const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    let sentCount = 0;
+    
+    // Only iterate over sessions connected to THIS server
+    for (const [sessionId, res] of this.localClients.entries()) {
+      if (sessionId !== excludeSessionId) {
+        try {
+          // Verify session belongs to this user
+          const sessionUserId = await this.redis.hget(`session:${sessionId}`, 'userId');
+          if (sessionUserId === userId) {
+            res.write(message);
             sentCount++;
-            console.log(`✅ SSE: Message sent to session ${client.sessionId} on server ${this.serverId}`);
-          } catch (error) {
-            console.error('❌ SSE: Error sending message:', error);
-            this.removeClient(userId, client.sessionId);
+            console.log(`✅ SSE: Message sent to session ${sessionId} on server ${this.serverId}`);
           }
+        } catch (error) {
+          console.error('❌ SSE: Error sending message:', error);
+          this.removeClient(userId, sessionId);
         }
-      });
-      
-      console.log(`📡 SSE: Sent ${event} to ${sentCount} local clients on server ${this.serverId}`);
-    } else {
-      console.log(`ℹ️  No local clients for user ${userId} on server ${this.serverId}`);
+      }
     }
+    
+    console.log(`📡 SSE: Sent ${event} to ${sentCount} local clients on server ${this.serverId}`);
   }
 
   async getConnectedDevicesCount(userId: string): Promise<number> {
     try {
-      const servers = await this.redis.smembers(`user:${userId}:servers`);
-      let totalCount = 0;
-      
-      for (const serverId of servers) {
-        const userExists = await this.redis.hexists(`server:${serverId}:users`, userId);
-        if (userExists) {
-          // This is an approximation - in a real implementation, 
-          // you'd want to store actual connection counts
-          totalCount++;
-        }
-      }
-      
-      return totalCount;
+      // Get all sessions for this user from Redis
+      const sessionIds = await this.redis.smembers(`user:${userId}:sessions`);
+      return sessionIds.length;
     } catch (error) {
       console.error('❌ Error getting device count:', error);
-      return this.localClients.get(userId)?.length || 0;
+      return this.localClients.size;
     }
   }
 
   async getServerStats() {
-    try {
-      const users = await this.redis.hkeys(`server:${this.serverId}:users`);
-      const localConnections = Array.from(this.localClients.values()).reduce((sum, clients) => sum + clients.length, 0);
-      
-      return {
-        serverId: this.serverId,
-        localConnections,
-        trackedUsers: users.length,
-        localUsers: this.localClients.size
-      };
-    } catch (error) {
-      console.error('❌ Error getting server stats:', error);
-      return {
-        serverId: this.serverId,
-        localConnections: Array.from(this.localClients.values()).reduce((sum, clients) => sum + clients.length, 0),
-        trackedUsers: 0,
-        localUsers: this.localClients.size
-      };
-    }
+    const localConnections = this.localClients.size;
+    
+    return {
+      serverId: this.serverId,
+      localConnections
+    };
   }
 
   async cleanup() {
     console.log(`🧹 Cleaning up Redis SSE Manager for server ${this.serverId}`);
     
-    try {
-      // Remove all users for this server
-      const users = await this.redis.hkeys(`server:${this.serverId}:users`);
-      for (const userId of users) {
-        await this.redis.srem(`user:${userId}:servers`, this.serverId);
+    // Close all local SSE connections
+    for (const [sessionId, res] of this.localClients.entries()) {
+      try {
+        res.end();
+      } catch (error) {
+        console.error(`❌ Error closing connection for session ${sessionId}:`, error);
       }
-      await this.redis.del(`server:${this.serverId}:users`);
-    } catch (error) {
-      console.error('❌ Cleanup error:', error);
     }
+    this.localClients.clear();
     
     this.subscriber.disconnect();
     this.publisher.disconnect();
