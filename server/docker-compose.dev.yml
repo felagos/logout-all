@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: logout-all-server-dev
     env_file:
-      - .env.staging
+      - .env
     environment:
       - NODE_ENV=development
       - PORT=3001

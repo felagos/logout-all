@@ -1,4 +1,4 @@
-.PHONY: help install dev build test clean docker staging frontend server logs stop
+.PHONY: help install dev build test clean docker dev-docker dev-logs dev-stop dev-restart backend logs stop restart
 
 # Default target
 help:
@@ -19,10 +19,10 @@ help:
 	@echo "  dev-restart - Restart development Docker environment"
 	@echo ""
 	@echo "Docker Production:"
-	@echo "  backend     - Start staging environment with Docker Compose (MongoDB + Redis + Server)"
-	@echo "  logs        - View staging environment logs"
-	@echo "  stop        - Stop staging environment"
-	@echo "  restart     - Restart staging environment and rebuild images"
+	@echo "  backend     - Start production environment with Docker Compose (MongoDB + Redis + Server)"
+	@echo "  logs        - View production environment logs"
+	@echo "  stop        - Stop production environment"
+	@echo "  restart     - Restart production environment and rebuild images"
 	@echo ""
 	@echo "URLs:"
 	@echo "  Server:     http://localhost:3001"
@@ -90,9 +90,9 @@ build:
 	@echo "✅ Build completed"
 
 backend:
-	@echo "Starting environment..."
+	@echo "Starting production environment..."
 	cd server && docker-compose -f docker-compose.yml up -d
-	@echo "✅ Staging environment started"
+	@echo "✅ Production environment started"
 	@echo "Server: http://localhost:3001"
 	@echo "Health: http://localhost:3001/health"
 	@echo "MongoDB: localhost:27017"
@@ -104,19 +104,19 @@ backend:
 	@powershell -Command "try { Invoke-WebRequest -Uri http://localhost:3001/health -UseBasicParsing | Out-Null; Write-Host '✅ Server is healthy' } catch { Write-Host '⚠️ Server starting up, check logs with make logs' }"
 
 logs:
-	@echo "Showing staging logs..."
+	@echo "Showing production logs..."
 	cd server && docker-compose -f docker-compose.yml logs -f
 
 stop:
-	@echo "Stopping staging environment..."
+	@echo "Stopping production environment..."
 	cd server && docker-compose -f docker-compose.yml down
-	@echo "✅ Staging environment stopped"
+	@echo "✅ Production environment stopped"
 
 restart:
-	@echo "Restarting staging environment..."
+	@echo "Restarting production environment..."
 	cd server && docker-compose -f docker-compose.yml down
 	cd server && docker-compose -f docker-compose.yml up -d --build
-	@echo "✅ Staging environment restarted"
+	@echo "✅ Production environment restarted"
 	@echo "Waiting for services..."
 	@sleep 15
 	@echo "Checking health..."

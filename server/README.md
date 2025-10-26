@@ -53,7 +53,7 @@ make stop
 bun install
 
 # Copy environment variables
-cp .env.staging .env
+cp .env .env.local
 
 # Start MongoDB and Redis manually
 # Then start the development server:
@@ -79,7 +79,7 @@ The server will start on http://localhost:3001
 
 ## Environment Variables
 
-Create a `.env` file (or use `.env.staging` for Docker):
+Create a `.env` file:
 
 ```env
 NODE_ENV=development
@@ -168,7 +168,7 @@ server/
 ├── Dockerfile                 # Production container
 ├── Dockerfile.dev             # Development container
 ├── init-mongo.js              # MongoDB initialization
-└── .env.staging               # Environment variables
+└── .env                        # Environment variables
 ```
 
 ## Database Schemas

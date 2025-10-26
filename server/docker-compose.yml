@@ -3,16 +3,16 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
-    container_name: logout-all-server-staging
+    container_name: logout-all-server
     env_file:
-      - .env.staging
+      - .env
     environment:
-      - NODE_ENV=staging
+      - NODE_ENV=dev
       - PORT=3001
       - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
       - MONGODB_URI=mongodb://mongo:27017/logout-all
       - REDIS_URL=redis://redis:6379
-      - SERVER_ID=server-staging-1
+      - SERVER_ID=server-dev-1
     ports:
       - "3001:3001"
     depends_on:
@@ -32,7 +32,7 @@ services:
 
   mongo:
     image: mongo:7.0-jammy
-    container_name: logout-all-mongo-staging
+    container_name: logout-all-mongo
     environment:
       - MONGO_INITDB_DATABASE=logout-all
     ports:
@@ -53,7 +53,7 @@ services:
 
   redis:
     image: redis:7.2-alpine
-    container_name: logout-all-redis-staging
+    container_name: logout-all-redis
     ports:
       - "6379:6379"
     networks:
