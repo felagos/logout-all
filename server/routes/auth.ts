@@ -46,7 +46,7 @@ router.post("/register", async (req: Request, res: Response) => {
       userId: user._id.toString(),
       sessionId,
       deviceInfo: getDeviceInfo(req.headers['user-agent'] || ''),
-      ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+      ipAddress: req.ip || req.socket?.remoteAddress || 'unknown',
       userAgent: req.headers['user-agent'] || 'unknown'
     });
 
@@ -93,7 +93,7 @@ router.post("/login", async (req: Request, res: Response) => {
       userId: user._id.toString(),
       sessionId,
       deviceInfo: getDeviceInfo(req.headers['user-agent'] || ''),
-      ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+      ipAddress: req.ip || req.socket?.remoteAddress || 'unknown',
       userAgent: req.headers['user-agent'] || 'unknown'
     });
 
