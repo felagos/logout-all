@@ -38,7 +38,9 @@ app.get("/health", async (req, res) => {
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
-});app.use("*", (req, res) => {
+});
+
+app.use("*", (req, res) => {
   res.status(404).json({ error: "Route not found" });
 });
 
