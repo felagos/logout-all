@@ -1,0 +1,8 @@
+{
+  "watch": ["*.ts", "routes/*.ts", "models/*.ts", "config/*.ts"],
+  "ext": "ts",
+  "exec": "bun run index.ts",
+  "env": {
+    "NODE_ENV": "development"
+  }
+}
