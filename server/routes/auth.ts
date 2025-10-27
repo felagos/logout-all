@@ -4,7 +4,6 @@ import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import { User } from "../models/User";
 import { Session } from "../models/Session";
-import { redisSSEManager } from "../services/RedisSSEManager";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-key-change-in-production";
@@ -155,19 +154,12 @@ router.post("/logout", authenticateToken, async (req: Request, res: Response) =>
 
 router.post("/logout-all", authenticateToken, async (req: Request, res: Response) => {
   try {
-    const { userId, sessionId } = (req as any).user;
-    console.log(`🔄 Logout-all initiated by user ${userId}, session ${sessionId}`);
+    const { userId } = (req as any).user;
     
     await Session.updateMany(
-      { userId, isActive: true },
+      { userId },
       { isActive: false }
     );
-    console.log(`🔄 All sessions deactivated for user ${userId}`);
-
-    redisSSEManager.sendToUserExceptSession(userId, sessionId, 'logout-all', {
-      message: 'You have been logged out from all devices',
-      timestamp: new Date().toISOString()
-    });
 
     res.json({ 
       message: "Successfully logged out from all devices",
@@ -175,6 +167,32 @@ router.post("/logout-all", authenticateToken, async (req: Request, res: Response
     });
   } catch (error) {
     console.error("Logout all error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/validate-session", authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { userId, sessionId } = (req as any).user;
+
+    const session = await Session.findOne({ userId, sessionId });
+    
+    if (!session || !session.isActive) {
+      return res.status(401).json({
+        valid: false,
+        message: "Session has been invalidated. Please sign in again.",
+        reason: "logout-all"
+      });
+    }
+
+    await Session.findOneAndUpdate(
+      { userId, sessionId },
+      { lastActivity: new Date() }
+    );
+
+    res.json({ valid: true, message: "Session is active" });
+  } catch (error) {
+    console.error("Session validation error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -191,34 +209,6 @@ router.get("/sessions", authenticateToken, async (req: Request, res: Response) =
   } catch (error) {
     console.error("Sessions error:", error);
     res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get("/events", (req: Request, res: Response) => {
-  const token = req.query.token as string;
-  
-  if (!token) {
-    return res.status(401).json({ error: "Access token required" });
-  }
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const { userId, sessionId } = decoded as { userId: string; sessionId: string };
-    console.log(`🔌 SSE: New connection request from user ${userId}, session ${sessionId}`);
-    
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control'
-    });
-
-    res.write(`data: ${JSON.stringify({ type: 'connected', message: 'SSE connection established' })}\n\n`);
-    
-    redisSSEManager.addClient(userId, sessionId, res);
-  } catch (error) {
-    return res.status(403).json({ error: "Invalid or expired token" });
   }
 });
 

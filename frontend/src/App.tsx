@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import './App.css'
 
 function App() {
@@ -10,58 +10,41 @@ function App() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [notifications, setNotifications] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (token && sessionId) {
-      console.log('🔌 Setting up SSE connection...');
-      const eventSource = new EventSource(`http://localhost/api/auth/events?token=${encodeURIComponent(token)}`);
+  const validateSessionForPlayback = async () => {
+    if (!token || !sessionId) {
+      alert('No active session');
+      return false;
+    }
 
-      eventSource.onopen = () => {
-        console.log('✅ SSE connection opened');
-      };
-
-      eventSource.onerror = (error) => {
-        console.error('❌ SSE connection error:', error);
-      };
-
-      eventSource.onmessage = (event) => {
-        console.log('📨 SSE message received:', event.data);
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'connected') {
-            console.log('✅ SSE connected');
-          }
-        } catch (error) {
-          console.error('❌ Error parsing SSE message:', error);
-          console.error('Raw message data:', event.data);
-        }
-      };
-
-      eventSource.addEventListener('logout-all', (event: MessageEvent) => {
-        console.log('🚪 Logout-all event received:', event.data);
-        try {
-          const data = JSON.parse(event.data);
-          setNotifications(prev => [...prev, data.message]);
-          setTimeout(() => {
-            console.log('🚪 Logging out due to logout-all event');
-            setUser(null);
-            setToken('');
-            setSessionId('');
-            setSessions([]);
-          }, 2000);
-        } catch (error) {
-          console.error('❌ Error parsing logout-all event:', error);
-          console.error('Raw event data:', event.data);
-        }
+    try {
+      const response = await fetch('http://localhost/api/auth/validate-session', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      return () => {
-        console.log('🔌 Closing SSE connection');
-        eventSource.close();
-      };
+      const data = await response.json();
+
+      if (!response.ok || !data.valid) {
+        alert('Session invalidated. Please sign in again.');
+        logout();
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      alert('Session validation error');
+      console.error(err);
+      return false;
     }
-  }, [token, sessionId]);
+  };
+
+  const playContent = async () => {
+    const isValid = await validateSessionForPlayback();
+    if (isValid) {
+      alert('✅ Playing content... Session is valid!');
+    }
+  };
 
   const handleAuth = async (isLogin: boolean) => {
     try {
@@ -113,6 +96,13 @@ function App() {
     }
   };
 
+  const logout = () => {
+    setUser(null);
+    setToken('');
+    setSessionId('');
+    setSessions([]);
+  };
+
   const handleLogout = async () => {
     try {
       await fetch('http://localhost/api/auth/logout', {
@@ -122,10 +112,7 @@ function App() {
         }
       });
 
-      setUser(null);
-      setToken('');
-      setSessionId('');
-      setSessions([]);
+      logout();
     } catch {
       console.error('Logout failed');
     }
@@ -156,18 +143,13 @@ function App() {
   if (user) {
     return (
       <div className="app">
-        <div className="notifications">
-          {notifications.map((notification, index) => (
-            <div key={index} className="notification">
-              {notification}
-            </div>
-          ))}
-        </div>
-        
         <h1>Welcome, {user.name}!</h1>
         <p>Email: {user.email}</p>
         
         <div className="actions">
+          <button onClick={playContent} className="primary">
+            ▶️ Play Content
+          </button>
           <button onClick={handleLogout}>Logout This Device</button>
           <button onClick={handleLogoutAll} className="danger">
             Logout All Devices

@@ -3,7 +3,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { connectDB } from "./config/database";
 import authRoutes from "./routes/auth";
-import { redisSSEManager } from "./services/RedisSSEManager";
 
 dotenv.config();
 
@@ -19,22 +18,18 @@ app.use("/api/auth", authRoutes);
 
 app.get("/health", async (req, res) => {
   try {
-    const serverStats = await redisSSEManager.getServerStats();
-    res.json({ 
+    res.json({
       status: "OK",
       timestamp: new Date().toISOString(),
       service: "Logout-All Server",
       database: "Connected",
-      redis: "Connected",
-      server: serverStats
+      description: "Session validation on demand"
     });
   } catch (error) {
     res.status(503).json({
       status: "ERROR",
       timestamp: new Date().toISOString(),
       service: "Logout-All Server",
-      database: "Connected",
-      redis: "Error",
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }

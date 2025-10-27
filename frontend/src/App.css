@@ -17,37 +17,6 @@ html, body, #root {
   justify-content: center;
 }
 
-.notifications {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1000;
-}
-
-.notification {
-  background: #ff6b6b;
-  color: white;
-  padding: 10px 15px;
-  margin-bottom: 10px;
-  border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 300px;
-  margin: 0 auto;
-}
-
-input {
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 16px;
-}
-
 button {
   padding: 10px 20px;
   border: none;
@@ -64,6 +33,11 @@ button:hover {
 button[type="submit"] {
   background: #007bff;
   color: white;
+}
+
+.primary {
+  background: #007bff !important;
+  color: white !important;
 }
 
 .link {
