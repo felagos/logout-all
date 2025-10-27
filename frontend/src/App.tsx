@@ -15,7 +15,7 @@ function App() {
   useEffect(() => {
     if (token && sessionId) {
       console.log('🔌 Setting up SSE connection...');
-      const eventSource = new EventSource(`http://localhost:3001/api/auth/events?token=${encodeURIComponent(token)}`);
+      const eventSource = new EventSource(`http://localhost/api/auth/events?token=${encodeURIComponent(token)}`);
 
       eventSource.onopen = () => {
         console.log('✅ SSE connection opened');
@@ -65,7 +65,7 @@ function App() {
 
   const handleAuth = async (isLogin: boolean) => {
     try {
-      const url = `http://localhost:3001/api/auth/${isLogin ? 'login' : 'register'}`;
+      const url = `http://localhost/api/auth/${isLogin ? 'login' : 'register'}`;
       const body = isLogin 
         ? { email, password }
         : { email, password, name };
@@ -98,7 +98,7 @@ function App() {
 
   const loadSessions = async (authToken: string) => {
     try {
-      const response = await fetch('http://localhost:3001/api/auth/sessions', {
+      const response = await fetch('http://localhost/api/auth/sessions', {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -115,7 +115,7 @@ function App() {
 
   const handleLogout = async () => {
     try {
-      await fetch('http://localhost:3001/api/auth/logout', {
+      await fetch('http://localhost/api/auth/logout', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -133,7 +133,7 @@ function App() {
 
   const handleLogoutAll = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/auth/logout-all', {
+      const response = await fetch('http://localhost/api/auth/logout-all', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
