@@ -1,6 +1,6 @@
-# Logout All - Multi-Device Session Management
+# Logout All - Netflix-Style Multi-Device Session Management
 
-A full-stack application that provides secure authentication with multi-device session management and real-time logout notifications.
+A full-stack application providing secure authentication with multi-device session management using passive session validation. No real-time notifications—devices discover logout-all on their next action attempt.
 
 ## 🚀 Quick Start
 
@@ -82,7 +82,7 @@ logout-all/
 
 ### Authentication
 - User registration and login
-- JWT-based authentication
+- JWT-based authentication (24-hour expiry)
 - Password hashing with bcrypt
 - Session management across devices
 
@@ -92,11 +92,12 @@ logout-all/
 - IP address and user agent logging
 - Session activity tracking
 
-### Real-Time Notifications
-- Server-Sent Events (SSE) for real-time communication
-- Instant logout notifications across devices
-- "Logout all devices" functionality
-- Automatic session cleanup
+### Passive Session Validation
+- Netflix-style logout mechanism
+- "Play Content" button validates session before allowing action
+- No real-time notifications—validation on demand
+- Users discover logout-all on next action attempt
+- Simplified architecture without WebSocket/SSE/Redis
 
 ### Security
 - JWT token validation

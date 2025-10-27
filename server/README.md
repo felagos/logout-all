@@ -1,14 +1,13 @@
 # Logout All - Backend Server
 
-A robust authentication server built with Express.js and Bun runtime that provides comprehensive session management with real-time notifications for multi-device logout functionality.
+A lightweight authentication server built with Express.js and Bun runtime providing comprehensive session management with passive validation for Netflix-style multi-device logout functionality.
 
 ## Features
 
-- **User Authentication** - Registration and login with JWT tokens
+- **User Authentication** - Registration and login with JWT tokens (24h expiry)
 - **Session Management** - Track active sessions across multiple devices
-- **Real-time Notifications** - Server-Sent Events (SSE) for instant logout notifications
+- **Passive Session Validation** - Check if session is active on demand (no real-time notifications)
 - **Multi-device Logout** - Logout from current device or all devices simultaneously
-- **Redis Integration** - Session storage and SSE connection management
 - **MongoDB Integration** - User data and session persistence
 - **Docker Support** - Full containerization with Docker Compose
 - **Health Monitoring** - Health check endpoints and monitoring
@@ -20,16 +19,15 @@ A robust authentication server built with Express.js and Bun runtime that provid
 - **Runtime**: Bun
 - **Framework**: Express.js with TypeScript
 - **Database**: MongoDB (user data and sessions)
-- **Cache/Sessions**: Redis (session management and SSE)
 - **Authentication**: JWT with bcrypt password hashing
-- **Real-time**: Server-Sent Events (SSE)
+- **Session Validation**: HTTP REST endpoints (POST /validate-session)
 - **Containerization**: Docker + Docker Compose
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) installed
 - [Docker](https://www.docker.com/) and Docker Compose (for containerized setup)
-- OR manually: MongoDB + Redis running locally
+- OR manually: MongoDB running locally
 
 ## Quick Start
 
@@ -66,12 +64,12 @@ The server will start on http://localhost:3001
 
 ### Authentication & Session Management
 
-- `POST /api/auth/register` - Register a new user
+- `POST /api/auth/register` - Register a new user (creates initial session)
 - `POST /api/auth/login` - Login user (creates new session)
-- `POST /api/auth/logout` - Logout from current device
-- `POST /api/auth/logout-all` - Logout from all devices (triggers SSE notifications)
+- `POST /api/auth/logout` - Logout from current device (invalidates session)
+- `POST /api/auth/logout-all` - Logout from all devices (invalidates all user sessions)
+- `POST /api/auth/validate-session` - Validate if current session is active (core endpoint for Netflix-style validation)
 - `GET /api/auth/sessions` - Get all active sessions with device info
-- `GET /api/auth/events` - Server-Sent Events endpoint for real-time notifications
 
 ### Health & Monitoring
 
@@ -86,18 +84,18 @@ NODE_ENV=development
 PORT=3001
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 MONGODB_URI=mongodb://localhost:27017/logout-all
-REDIS_URL=redis://localhost:6379
-SERVER_ID=server-1
 ```
 
-## Real-time Session Management
+## Session Management Architecture
 
-The application uses a sophisticated session management system:
+The application uses a passive session validation system (Netflix-style):
 
-1. **Session Creation** - Each login creates a tracked session with device info
-2. **Redis Storage** - Active sessions stored in Redis for fast access
-3. **MongoDB Persistence** - Session data persisted in MongoDB
-4. **SSE Connections** - Real-time notifications via Server-Sent Events
+1. **Session Creation** - Each login creates a tracked session with device info, stored in MongoDB with `isActive: true`
+2. **JWT Issuance** - Token contains `userId` and `sessionId`
+3. **Passive Validation** - On demand, frontend calls `POST /api/auth/validate-session`
+4. **Backend Check** - Queries `Session.findOne({userId, sessionId})` and verifies `isActive` flag
+5. **Logout-All** - Updates all user sessions to `isActive: false`
+6. **Discovery** - Other devices discover logout-all on their next validation attempt (no real-time notification)
 5. **Multi-device Logout** - Instant notifications to all connected devices
 
 ## Usage Examples

@@ -1,12 +1,12 @@
 # Logout All - Frontend
 
-A React TypeScript frontend for the logout-all application, providing user authentication and session management with real-time notifications.
+A React TypeScript frontend for the logout-all application, providing user authentication and session management with Netflix-style passive validation.
 
 ## Features
 
 - **User Authentication** - Login and registration
 - **Session Management** - View all active sessions with device info, IP addresses, and timestamps
-- **Real-time Notifications** - Server-Sent Events (SSE) for logout notifications
+- **Passive Validation** - "Play Content" button validates session on demand before allowing action
 - **Multi-device Logout** - Logout from current device or all devices simultaneously
 - **Responsive Design** - Clean, modern UI with dark theme
 
@@ -14,8 +14,8 @@ A React TypeScript frontend for the logout-all application, providing user authe
 
 - **React 18** with TypeScript
 - **Vite** for fast development and building
-- **CSS3** with custom styling
-- **Server-Sent Events** for real-time communication
+- **CSS3** with custom styling (Netflix-style dark theme)
+- **REST API** for backend communication (no WebSocket/SSE)
 
 ## Getting Started
 
@@ -46,16 +46,22 @@ The frontend will be available at `http://localhost:5173`
 
 The frontend connects to the backend server at `http://localhost:3001` and uses the following endpoints:
 
-- `POST /api/auth/login` - User login
-- `POST /api/auth/register` - User registration
+- `POST /api/auth/login` - User login (creates session)
+- `POST /api/auth/register` - User registration (creates session)
 - `POST /api/auth/logout` - Logout current session
 - `POST /api/auth/logout-all` - Logout all sessions
+- `POST /api/auth/validate-session` - Check if current session is active (called before playing content)
 - `GET /api/auth/sessions` - Get user's active sessions
-- `GET /api/auth/events` - SSE endpoint for real-time notifications
 
-## Real-time Features
+## Netflix-Style Passive Validation
 
-The application uses Server-Sent Events to receive real-time logout notifications. When a user triggers "logout all devices", other sessions receive immediate notifications before being automatically logged out.
+When users click "Play Content", the frontend:
+1. Calls `POST /api/auth/validate-session` to check if the session is still active
+2. Backend checks if session has `isActive: true` in MongoDB
+3. If valid → user can proceed
+4. If invalid (after logout-all) → user is redirected to login
+
+Other devices discover logout-all on their next play attempt, not through real-time notifications.
 
 ## Building for Production
 
