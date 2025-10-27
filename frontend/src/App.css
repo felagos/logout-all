@@ -30,8 +30,8 @@ form {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 300px;
-  margin: 0 auto 20px;
+  width: 300px;
+  margin: 0 auto 0;
   justify-content: center;
 }
 
