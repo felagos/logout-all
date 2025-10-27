@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon index.ts",
+    "dev:simple": "nodemon index-simple.ts",
     "start": "bun run index.ts",
+    "start:simple": "bun run index-simple.ts",
     "test-db": "bun run test-db.ts",
     "docker:build": "docker build -t logout-all-server .",
     "docker:run": "docker run -p 3001:3001 --env-file .env logout-all-server",
