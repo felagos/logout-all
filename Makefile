@@ -1,4 +1,17 @@
-.PHONY: help install dev build test clean docker dev-docker dev-logs dev-stop dev-restart backend logs stop restart
+.PHONY: help install dev build test clean docker dev-docker dev-logs dev-stop dev-restart backend logs stop restart frontend server
+
+# Detect OS for cross-platform commands
+ifeq ($(OS),Windows_NT)
+    detected_OS := Windows
+    SLEEP_CMD := timeout /t
+    HEALTH_CHECK := powershell -Command "try { Invoke-WebRequest -Uri http://localhost:3001/health -UseBasicParsing | Out-Null; Write-Host '✅ Server is healthy' } catch { Write-Host '⚠️ Server starting up, check logs with make logs' }"
+    HEALTH_CHECK_RESTART := powershell -Command "try { Invoke-WebRequest -Uri http://localhost:3001/health -UseBasicParsing | Out-Null; Write-Host '✅ Server is healthy' } catch { Write-Host '⚠️ Check logs with make logs' }"
+else
+    detected_OS := $(shell uname -s)
+    SLEEP_CMD := sleep
+    HEALTH_CHECK := if curl -s http://localhost:3001/health > /dev/null 2>&1; then echo "✅ Server is healthy"; else echo "⚠️ Server starting up, check logs with make logs"; fi
+    HEALTH_CHECK_RESTART := if curl -s http://localhost:3001/health > /dev/null 2>&1; then echo "✅ Server is healthy"; else echo "⚠️ Check logs with make logs"; fi
+endif
 
 # Default target
 help:
@@ -37,7 +50,7 @@ install:
 	@echo "Installing server dependencies..."
 	cd server && bun install
 	@echo "Installing frontend dependencies..."
-	cd frontend && npm install
+	cd frontend && bun install
 	@echo "✅ All dependencies installed"
 
 # Development
@@ -51,7 +64,7 @@ server:
 
 frontend:
 	@echo "Starting frontend in development mode..."
-	cd frontend && npm run dev
+	cd frontend && bun dev
 
 # Docker Development (with auto-reload)
 dev-docker:
@@ -85,7 +98,7 @@ dev-restart:
 # Build
 build:
 	@echo "Building frontend..."
-	cd frontend && npm run build
+	cd frontend && bun run build
 	@echo "Building server Docker image..."
 	cd server && docker build -t logout-all-server:latest .
 	@echo "✅ Build completed"
@@ -100,9 +113,9 @@ backend:
 	@echo "Redis: localhost:6379"
 	@echo ""
 	@echo "Waiting for services to start..."
-	@timeout /t 10 /nobreak >nul 2>&1
+	@$(SLEEP_CMD) 10
 	@echo "Checking service health..."
-	@powershell -Command "try { Invoke-WebRequest -Uri http://localhost:3001/health -UseBasicParsing | Out-Null; Write-Host '✅ Server is healthy' } catch { Write-Host '⚠️ Server starting up, check logs with make logs' }"
+	@$(HEALTH_CHECK)
 
 logs:
 	@echo "Showing production logs..."
@@ -119,9 +132,9 @@ restart:
 	cd server && docker-compose -f docker-compose.yml up -d --build
 	@echo "✅ Production environment restarted"
 	@echo "Waiting for services..."
-	@sleep 15
+	@$(SLEEP_CMD) 15
 	@echo "Checking health..."
-	@powershell -Command "try { Invoke-WebRequest -Uri http://localhost:3001/health -UseBasicParsing | Out-Null; Write-Host '✅ Server is healthy' } catch { Write-Host '⚠️ Check logs with make logs' }"
+	@$(HEALTH_CHECK_RESTART)
 
 # Cleanup
 clean:
