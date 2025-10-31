@@ -1,5 +1,14 @@
 .PHONY: help install dev build test clean docker dev-docker dev-logs dev-stop dev-restart backend logs stop restart
 
+# Detect OS for cross-platform commands
+ifeq ($(OS),Windows_NT)
+    detected_OS := Windows
+    SLEEP_CMD := powershell -Command "Start-Sleep -Seconds
+else
+    detected_OS := $(shell uname -s)
+    SLEEP_CMD := sleep
+endif
+
 # Default target
 help:
 	@echo "Available commands:"
@@ -100,7 +109,7 @@ backend:
 	@echo "Redis: localhost:6379"
 	@echo ""
 	@echo "Waiting for services to start..."
-	@timeout /t 10 /nobreak >nul 2>&1
+	@$(SLEEP_CMD) 10"
 	@echo "Checking service health..."
 	@powershell -Command "try { Invoke-WebRequest -Uri http://localhost:3001/health -UseBasicParsing | Out-Null; Write-Host '✅ Server is healthy' } catch { Write-Host '⚠️ Server starting up, check logs with make logs' }"
 
@@ -119,7 +128,7 @@ restart:
 	cd server && docker-compose -f docker-compose.yml up -d --build
 	@echo "✅ Production environment restarted"
 	@echo "Waiting for services..."
-	@sleep 15
+	@$(SLEEP_CMD) 15"
 	@echo "Checking health..."
 	@powershell -Command "try { Invoke-WebRequest -Uri http://localhost:3001/health -UseBasicParsing | Out-Null; Write-Host '✅ Server is healthy' } catch { Write-Host '⚠️ Check logs with make logs' }"
 
