@@ -1,4 +1,4 @@
-.PHONY: help install dev build test clean docker dev-docker dev-logs dev-stop dev-restart backend logs stop restart
+.PHONY: help install dev build test clean docker dev-docker dev-logs dev-stop dev-restart backend logs stop restart server frontend
 
 # Detect OS for cross-platform commands
 ifeq ($(OS),Windows_NT)
