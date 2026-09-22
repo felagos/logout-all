@@ -1,14 +1,47 @@
 import { Response } from "express";
 import Redis from "ioredis";
 
-interface RedisMessage {
-  operation: 'disconnect-session' | 'logout-all';
+interface RedisMessageBase {
   userId: string;
-  sessionId?: string;
-  initiatorSessionId?: string;
-  data?: unknown;
   fromServer: string;
   timestamp: string;
+}
+
+interface DisconnectSessionMessage extends RedisMessageBase {
+  operation: 'disconnect-session';
+  sessionId: string;
+}
+
+interface LogoutAllMessage extends RedisMessageBase {
+  operation: 'logout-all';
+  initiatorSessionId: string;
+  data?: unknown;
+}
+
+type RedisMessage = DisconnectSessionMessage | LogoutAllMessage;
+type RedisOperation = RedisMessage['operation'];
+type RedisMessageStrategies = {
+  [Operation in RedisOperation]: (
+    event: Extract<RedisMessage, { operation: Operation }>
+  ) => Promise<void>;
+};
+
+function isRedisMessage(value: unknown): value is RedisMessage {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const event = value as Record<string, unknown>;
+  const hasBaseFields = typeof event.userId === 'string'
+    && typeof event.fromServer === 'string'
+    && typeof event.timestamp === 'string';
+
+  if (!hasBaseFields) {
+    return false;
+  }
+
+  return (event.operation === 'disconnect-session' && typeof event.sessionId === 'string')
+    || (event.operation === 'logout-all' && typeof event.initiatorSessionId === 'string');
 }
 
 interface LocalClient {
@@ -22,6 +55,14 @@ class RedisSSEManager {
   private subscriber: Redis;
   private localClients: Map<string, LocalClient> = new Map();
   private serverId: string;
+  private readonly messageStrategies: RedisMessageStrategies = {
+    'disconnect-session': async (event) => {
+      await this.disconnectLocalSession(event.userId, event.sessionId);
+    },
+    'logout-all': async (event) => {
+      await this.logoutAllLocalClients(event.userId, event.initiatorSessionId, event.data);
+    },
+  };
 
   constructor() {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -156,20 +197,29 @@ class RedisSSEManager {
 
   private async handleRedisMessage(channel: string, message: string) {
     try {
-      const event: RedisMessage = JSON.parse(message);
+      const event: unknown = JSON.parse(message);
+
+      if (!isRedisMessage(event)) {
+        console.error('❌ Invalid Redis SSE message:', message);
+        return;
+      }
 
       if (event.fromServer === this.serverId) {
         return;
       }
 
-      if (event.operation === 'disconnect-session' && event.sessionId) {
-        await this.disconnectLocalSession(event.userId, event.sessionId);
-      } else if (event.operation === 'logout-all' && event.initiatorSessionId) {
-        await this.logoutAllLocalClients(event.userId, event.initiatorSessionId, event.data);
-      }
+      await this.executeMessageStrategy(event);
     } catch (error) {
       console.error('❌ Error parsing Redis message:', error, 'Raw message:', message);
     }
+  }
+
+  private async executeMessageStrategy(event: RedisMessage) {
+    const strategy = this.messageStrategies[event.operation] as (
+      message: RedisMessage
+    ) => Promise<void>;
+
+    await strategy(event);
   }
 
   private async disconnectLocalSession(userId: string, sessionId: string) {
