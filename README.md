@@ -119,6 +119,12 @@ logout-all/
 
 The Vite development server listens on the local network. To test from a phone on the same Wi-Fi, open `http://<your-LAN-IP>:5173`. Frontend API and SSE requests use the same origin and are proxied to the backend automatically.
 
+### Mobile Expo App
+
+The `mobile/` directory contains the Expo Go app for Android and iOS. Set `EXPO_PUBLIC_API_URL` in `mobile/.env.local` to the backend's LAN origin (for example, `http://192.168.1.10`), then run `make mobile`. A physical phone cannot use `localhost` to reach the development machine.
+
+Sign in with the same account in the mobile and web clients to verify that `logout-all` revokes both sessions and the remote client returns to login after receiving the SSE event.
+
 For the Docker development stack, run `make up` and use the same phone URL. MongoDB and Redis remain bound to `127.0.0.1` and are not exposed to other devices on the network.
 
 ### Staging Environment

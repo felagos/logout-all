@@ -1,4 +1,4 @@
-.PHONY: help install dev build test clean docker dev-docker dev-logs dev-stop dev-restart up down backend logs stop restart server frontend
+.PHONY: help install dev build test clean docker dev-docker dev-logs dev-stop dev-restart up down backend logs stop restart server frontend mobile mobile-install
 
 # Detect OS for cross-platform commands
 ifeq ($(OS),Windows_NT)
@@ -18,6 +18,8 @@ help:
 	@echo "  dev         - Start development servers (run server and frontend in separate terminals)"
 	@echo "  server      - Start server in development mode (bun)"
 	@echo "  frontend    - Start frontend in development mode (npm)"
+	@echo "  mobile      - Start the Expo mobile app"
+	@echo "  mobile-install - Install mobile app dependencies"
 	@echo "  build       - Build frontend and backend development images"
 	@echo "  clean       - Clean node_modules and build artifacts"
 	@echo ""
@@ -64,6 +66,12 @@ up:
 	@echo "✅ Frontend: http://localhost:5173"
 	@echo "✅ Phone:    http://<your-LAN-IP>:5173"
 	@echo "✅ Backend: http://localhost/health"
+
+mobile-install:
+	cd mobile && npm install
+
+mobile:
+	cd mobile && npm start
 
 down:
 	@echo "Stopping frontend and backend development services..."
