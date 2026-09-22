@@ -49,7 +49,7 @@ install:
 	@echo "Installing server dependencies..."
 	cd server && bun install
 	@echo "Installing frontend dependencies..."
-	cd frontend && npm install
+	cd frontend && bun install
 	@echo "✅ All dependencies installed"
 
 # Full development stack
