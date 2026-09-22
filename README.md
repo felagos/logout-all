@@ -117,6 +117,10 @@ logout-all/
    - Server: http://localhost:3001
    - Health: http://localhost:3001/health
 
+The Vite development server listens on the local network. To test from a phone on the same Wi-Fi, open `http://<your-LAN-IP>:5173`. Frontend API and SSE requests use the same origin and are proxied to the backend automatically.
+
+For the Docker development stack, run `make up` and use the same phone URL. MongoDB and Redis remain bound to `127.0.0.1` and are not exposed to other devices on the network.
+
 ### Staging Environment
 ```bash
 # Start staging with Docker
@@ -173,6 +177,9 @@ JWT_SECRET=your-super-secret-key
 PORT=3001
 MONGODB_URI=mongodb://localhost:27017/logout-all
 NODE_ENV=development
+API_PROXY_TARGET=http://nginx
+APP_BIND_ADDRESS=0.0.0.0
+INFRA_BIND_ADDRESS=127.0.0.1
 ```
 
 ### Staging (.env.staging)

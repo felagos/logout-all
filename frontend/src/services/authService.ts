@@ -1,4 +1,4 @@
-const authApiUrl = 'http://localhost/api/auth'
+const authApiUrl = '/api/auth'
 
 export type User = {
   id: string

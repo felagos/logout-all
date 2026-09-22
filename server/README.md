@@ -161,7 +161,6 @@ server/
 ├── routes/
 │   └── auth.ts                # Authentication routes
 ├── services/
-│   ├── SSEManager.ts          # Server-Sent Events manager
 │   └── RedisSSEManager.ts     # Redis-based SSE implementation
 ├── docker-compose.yml         # Production Docker setup
 ├── docker-compose.dev.yml     # Development Docker setup

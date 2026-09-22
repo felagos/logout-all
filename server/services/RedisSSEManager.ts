@@ -1,20 +1,26 @@
 import { Response } from "express";
 import Redis from "ioredis";
 
-interface RedisEvent {
+interface RedisMessage {
+  operation: 'disconnect-session' | 'logout-all';
   userId: string;
-  excludeSessionId: string;
-  event: string;
-  data: any;
+  sessionId?: string;
+  initiatorSessionId?: string;
+  data?: unknown;
   fromServer: string;
   timestamp: string;
+}
+
+interface LocalClient {
+  userId: string;
+  response: Response;
 }
 
 class RedisSSEManager {
   private redis: Redis;
   private publisher: Redis;
   private subscriber: Redis;
-  private localClients: Map<string, Response> = new Map();
+  private localClients: Map<string, LocalClient> = new Map();
   private serverId: string;
 
   constructor() {
@@ -26,6 +32,7 @@ class RedisSSEManager {
     const redisOptions = {
       enableReadyCheck: false,
       maxRetriesPerRequest: null,
+      commandTimeout: 1000,
     };
     
     this.redis = new Redis(redisUrl, redisOptions);
@@ -61,6 +68,15 @@ class RedisSSEManager {
 
   async addClient(userId: string, sessionId: string, res: Response) {
     const userSessionsKey = `user:${userId}:sessions`;
+
+    // Register local ownership before Redis I/O so a concurrent logout can
+    // always find and close this response.
+    this.localClients.set(sessionId, { userId, response: res });
+
+    res.on('close', () => {
+      void this.removeClient(userId, sessionId, res);
+      console.log(`📱 SSE: Client disconnected - User: ${userId}, Session: ${sessionId}, Server: ${this.serverId}`);
+    });
     
     try {
       await this.redis.hset(`session:${sessionId}`, 
@@ -71,85 +87,113 @@ class RedisSSEManager {
       
       await this.redis.sadd(userSessionsKey, sessionId);
       await this.redis.expire(userSessionsKey, 86400);
+
+      if (this.localClients.get(sessionId)?.response !== res) {
+        await this.removeRedisPresence(userId, sessionId);
+        return;
+      }
     } catch (error) {
       console.error('❌ Redis registration error:', error);
     }
     
-    this.localClients.set(sessionId, res);
-    
     console.log(`📱 SSE: Client connected - User: ${userId}, Session: ${sessionId}, Server: ${this.serverId}`);
-
-    res.on('close', () => {
-      this.removeClient(userId, sessionId);
-      console.log(`📱 SSE: Client disconnected - User: ${userId}, Session: ${sessionId}, Server: ${this.serverId}`);
-    });
   }
 
-  removeClient(userId: string, sessionId: string) {
+  async removeClient(userId: string, sessionId: string, response?: Response) {
+    const localClient = this.localClients.get(sessionId);
+    if (response && localClient?.response !== response) {
+      return;
+    }
+
     this.localClients.delete(sessionId);
-    
+
+    await this.removeRedisPresence(userId, sessionId);
+  }
+
+  private async removeRedisPresence(userId: string, sessionId: string) {
     try {
-      this.redis.srem(`user:${userId}:sessions`, sessionId).catch(console.error);
-      this.redis.del(`session:${sessionId}`).catch(console.error);
+      await Promise.all([
+        this.redis.srem(`user:${userId}:sessions`, sessionId),
+        this.redis.del(`session:${sessionId}`),
+      ]);
     } catch (error) {
       console.error('❌ Error removing client from Redis:', error);
     }
   }
 
-  async sendToUserExceptSession(userId: string, excludeSessionId: string, event: string, data: any) {
-    console.log(`📡 Redis SSE: Broadcasting ${event} to user ${userId}, excluding session ${excludeSessionId}`);
-    
+  async disconnectSession(userId: string, sessionId: string) {
+    const message: RedisMessage = {
+      operation: 'disconnect-session',
+      userId,
+      sessionId,
+      fromServer: this.serverId,
+      timestamp: new Date().toISOString(),
+    };
+
     try {
-      const redisEvent: RedisEvent = {
-        userId,
-        excludeSessionId,
-        event,
-        data,
-        fromServer: this.serverId,
-        timestamp: new Date().toISOString()
-      };
-      
-      await this.publisher.publish('sse-events', JSON.stringify(redisEvent));
-      console.log(`📡 Redis: Published ${event} event to Redis for user ${userId}`);
-    } catch (error) {
-      console.error('❌ Redis publish error:', error);
+      await this.publisher.publish('sse-events', JSON.stringify(message));
+    } finally {
+      await this.disconnectLocalSession(userId, sessionId);
+    }
+  }
+
+  async notifyLogoutAllAndDisconnect(userId: string, initiatorSessionId: string, data: unknown) {
+    const message: RedisMessage = {
+      operation: 'logout-all',
+      userId,
+      initiatorSessionId,
+      data,
+      fromServer: this.serverId,
+      timestamp: new Date().toISOString(),
+    };
+
+    try {
+      await this.publisher.publish('sse-events', JSON.stringify(message));
+    } finally {
+      await this.logoutAllLocalClients(userId, initiatorSessionId, data);
     }
   }
 
   private async handleRedisMessage(channel: string, message: string) {
     try {
-      const event: RedisEvent = JSON.parse(message);
-      
-      console.log(`📡 Redis: Received ${event.event} event from server ${event.fromServer} for user ${event.userId}`);
-      
-      await this.sendToLocalClients(event.userId, event.excludeSessionId, event.event, event.data);
+      const event: RedisMessage = JSON.parse(message);
+
+      if (event.fromServer === this.serverId) {
+        return;
+      }
+
+      if (event.operation === 'disconnect-session' && event.sessionId) {
+        await this.disconnectLocalSession(event.userId, event.sessionId);
+      } else if (event.operation === 'logout-all' && event.initiatorSessionId) {
+        await this.logoutAllLocalClients(event.userId, event.initiatorSessionId, event.data);
+      }
     } catch (error) {
       console.error('❌ Error parsing Redis message:', error, 'Raw message:', message);
     }
   }
 
-  private async sendToLocalClients(userId: string, excludeSessionId: string, event: string, data: any) {
-    const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    let sentCount = 0;
-    
-    for (const [sessionId, res] of this.localClients.entries()) {
-      if (sessionId !== excludeSessionId) {
-        try {
-          const sessionUserId = await this.redis.hget(`session:${sessionId}`, 'userId');
-          if (sessionUserId === userId) {
-            console.log('calling write method for user ', userId);
-            res.write(message);
-            sentCount++;
-            console.log(`✅ SSE: Message sent to session ${sessionId} on server ${this.serverId}`);
-          }
-        } catch (error) {
-          console.error('❌ SSE: Error sending message:', error);
-          this.removeClient(userId, sessionId);
-        }
-      }
+  private async disconnectLocalSession(userId: string, sessionId: string) {
+    const client = this.localClients.get(sessionId);
+    if (!client || client.userId !== userId) {
+      return;
     }
-    
-    console.log(`📡 SSE: Sent ${event} to ${sentCount} local clients on server ${this.serverId}`);
+
+    const removal = this.removeClient(userId, sessionId, client.response);
+    client.response.end();
+    await removal;
+  }
+
+  private async logoutAllLocalClients(userId: string, initiatorSessionId: string, data: unknown) {
+    const clients = Array.from(this.localClients.entries())
+      .filter(([, client]) => client.userId === userId);
+
+    await Promise.all(clients.map(async ([sessionId, client]) => {
+      if (sessionId !== initiatorSessionId) {
+        client.response.write(`event: logout-all\ndata: ${JSON.stringify(data)}\n\n`);
+      }
+
+      await this.disconnectLocalSession(userId, sessionId);
+    }));
   }
 
   async getConnectedDevicesCount(userId: string): Promise<number> {
@@ -158,7 +202,9 @@ class RedisSSEManager {
       return sessionIds.length;
     } catch (error) {
       console.error('❌ Error getting device count:', error);
-      return this.localClients.size;
+      return Array.from(this.localClients.values())
+        .filter((client) => client.userId === userId)
+        .length;
     }
   }
 
@@ -174,9 +220,9 @@ class RedisSSEManager {
   async cleanup() {
     console.log(`🧹 Cleaning up Redis SSE Manager for server ${this.serverId}`);
     
-    for (const [sessionId, res] of this.localClients.entries()) {
+    for (const [sessionId, client] of this.localClients.entries()) {
       try {
-        res.end();
+        client.response.end();
       } catch (error) {
         console.error(`❌ Error closing connection for session ${sessionId}:`, error);
       }

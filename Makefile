@@ -37,8 +37,9 @@ help:
 	@echo ""
 	@echo "URLs:"
 	@echo "  Load Balancer: http://localhost"
+	@echo "  Frontend:      http://localhost:5173"
+	@echo "  Phone (LAN):   http://<your-LAN-IP>:5173"
 	@echo "  Health:        http://localhost/health"
-	@echo "  Server 1:      http://localhost:3001 (dev mode only)"
 	@echo "  MongoDB:       localhost:27017"
 	@echo "  Redis:         localhost:6379"
 	@echo ""
@@ -61,6 +62,7 @@ up:
 	@echo "Starting frontend and backend development services..."
 	cd server && docker-compose -f docker-compose.dev.yml up -d --build
 	@echo "✅ Frontend: http://localhost:5173"
+	@echo "✅ Phone:    http://<your-LAN-IP>:5173"
 	@echo "✅ Backend: http://localhost/health"
 
 down:

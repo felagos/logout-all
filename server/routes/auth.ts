@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
@@ -8,6 +8,51 @@ import { redisSSEManager } from "../services/RedisSSEManager";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-key-change-in-production";
+
+interface AuthTokenPayload extends jwt.JwtPayload {
+  userId: string;
+  sessionId: string;
+}
+
+class RevokedSessionError extends Error {}
+
+async function validateSessionToken(token: string): Promise<AuthTokenPayload> {
+  const decoded = jwt.verify(token, JWT_SECRET);
+
+  if (
+    typeof decoded === "string" ||
+    typeof decoded.userId !== "string" ||
+    typeof decoded.sessionId !== "string"
+  ) {
+    throw new jwt.JsonWebTokenError("Invalid token payload");
+  }
+
+  const activeSession = await Session.exists({
+    userId: decoded.userId,
+    sessionId: decoded.sessionId,
+    isActive: true,
+  });
+
+  if (!activeSession) {
+    throw new RevokedSessionError("Session revoked");
+  }
+
+  return decoded as AuthTokenPayload;
+}
+
+function sendAuthenticationError(error: unknown, res: Response): boolean {
+  if (error instanceof RevokedSessionError) {
+    res.status(401).json({ error: "Session revoked" });
+    return true;
+  }
+
+  if (error instanceof jwt.JsonWebTokenError) {
+    res.status(403).json({ error: "Invalid or expired token" });
+    return true;
+  }
+
+  return false;
+}
 
 function getDeviceInfo(userAgent: string): string {
   if (userAgent.includes('Mobile')) return 'Mobile Device';
@@ -120,7 +165,7 @@ router.post("/login", async (req: Request, res: Response) => {
   }
 });
 
-const authenticateToken = (req: Request, res: Response, next: any) => {
+const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
 
@@ -128,13 +173,15 @@ const authenticateToken = (req: Request, res: Response, next: any) => {
     return res.status(401).json({ error: "Access token required" });
   }
 
-  jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
-    if (err) {
-      return res.status(403).json({ error: "Invalid or expired token" });
-    }
+  try {
+    const decoded = await validateSessionToken(token);
     (req as any).user = decoded;
     next();
-  });
+  } catch (error) {
+    if (!sendAuthenticationError(error, res)) {
+      next(error);
+    }
+  }
 };
 
 router.post("/logout", authenticateToken, async (req: Request, res: Response) => {
@@ -142,9 +189,15 @@ router.post("/logout", authenticateToken, async (req: Request, res: Response) =>
     const { userId, sessionId } = (req as any).user;
     
     await Session.findOneAndUpdate(
-      { userId, sessionId },
+      { userId, sessionId, isActive: true },
       { isActive: false }
     );
+
+    try {
+      await redisSSEManager.disconnectSession(userId, sessionId);
+    } catch (error) {
+      console.error("Logout Redis disconnect error:", error);
+    }
 
     res.json({ message: "Logout successful" });
   } catch (error) {
@@ -164,10 +217,14 @@ router.post("/logout-all", authenticateToken, async (req: Request, res: Response
     );
     console.log(`🔄 All sessions deactivated for user ${userId}`);
 
-    redisSSEManager.sendToUserExceptSession(userId, sessionId, 'logout-all', {
-      message: 'You have been logged out from all devices',
-      timestamp: new Date().toISOString()
-    });
+    try {
+      await redisSSEManager.notifyLogoutAllAndDisconnect(userId, sessionId, {
+        message: 'You have been logged out from all devices',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Logout-all Redis disconnect error:", error);
+    }
 
     res.json({ 
       message: "Successfully logged out from all devices",
@@ -194,7 +251,7 @@ router.get("/sessions", authenticateToken, async (req: Request, res: Response) =
   }
 });
 
-router.get("/events", (req: Request, res: Response) => {
+router.get("/events", async (req: Request, res: Response) => {
   const token = req.query.token as string;
   
   if (!token) {
@@ -202,8 +259,7 @@ router.get("/events", (req: Request, res: Response) => {
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const { userId, sessionId } = decoded as { userId: string; sessionId: string };
+    const { userId, sessionId } = await validateSessionToken(token);
     console.log(`🔌 SSE: New connection request from user ${userId}, session ${sessionId}`);
     
     res.writeHead(200, {
@@ -216,9 +272,12 @@ router.get("/events", (req: Request, res: Response) => {
 
     res.write(`data: ${JSON.stringify({ type: 'connected', message: 'SSE connection established' })}\n\n`);
     
-    redisSSEManager.addClient(userId, sessionId, res);
+    void redisSSEManager.addClient(userId, sessionId, res);
   } catch (error) {
-    return res.status(403).json({ error: "Invalid or expired token" });
+    if (!sendAuthenticationError(error, res)) {
+      console.error("SSE authentication error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
   }
 });
 
