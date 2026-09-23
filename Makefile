@@ -52,6 +52,8 @@ install:
 	cd server && bun install
 	@echo "Installing frontend dependencies..."
 	cd frontend && bun install
+	@echo "Installing mobile dependencies..."
+	cd mobile && npm install
 	@echo "✅ All dependencies installed"
 
 # Full development stack
